@@ -20,7 +20,6 @@ jobs:
       with:
         msystem: MINGW64
         update: true
-        # 這裡直接安裝編譯必備包
         install: >-
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-sqlite3
@@ -33,10 +32,8 @@ jobs:
         LUA_LIB=$(find /mingw64/lib -name "liblua.a" | head -n 1)
         echo "Found Static Lua Lib: $LUA_LIB"
         
-        # 2. 一行 GCC 暴力靜態鎖定編譯
-        # -static-libgcc: 拔除所有 MinGW 系統 DLL 依賴
-        # -Wl,--export-all-symbols: 確保 SQLite load_extension 讀得到進入點
-        gcc -O2 -shared -o sqlite-lua.dll sqlite-lua.c \
+        # 2. 修正主程式檔名為 sqlite_lua.c 進行編譯
+        gcc -O2 -shared -o sqlite-lua.dll sqlite_lua.c \
           -I/mingw64/include \
           -I/mingw64/include/lua5.3 \
           $LUA_LIB \
@@ -61,7 +58,6 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        # 同時安裝 sqlite3、lua5.3 的標頭檔與開發庫
         sudo apt-get install -y build-essential libsqlite3-dev liblua5.3-dev
 
     - name: Build Static SO
@@ -70,8 +66,8 @@ jobs:
         LUA_LIB=$(find /usr/lib -name "liblua5.3.a" | head -n 1)
         echo "Found Static Lua Lib: $LUA_LIB"
         
-        # 2. Linux 下打包動態庫時如果包含靜態庫，必須帶上 -fPIC 與 -Wl,-Bsymbolic
-        gcc -O2 -shared -fPIC -o sqlite-lua.so sqlite-lua.c \
+        # 2. 修正主程式檔名為 sqlite_lua.c 進行編譯
+        gcc -O2 -shared -fPIC -o sqlite-lua.so sqlite_lua.c \
           -I/usr/include/lua5.3 \
           -Wl,-Bsymbolic \
           $LUA_LIB
