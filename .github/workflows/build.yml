@@ -32,8 +32,8 @@ jobs:
         LUA_LIB=$(find /mingw64/lib -name "liblua.a" | head -n 1)
         echo "Found Static Lua Lib: $LUA_LIB"
         
-        # 2. 修正主程式檔名為 sqlite_lua.c 進行編譯
-        gcc -O2 -shared -o sqlite-lua.dll sqlite_lua.c \
+        # 2. 將輸入檔案修正為 lua.c，並輸出為 sqlite-lua.dll
+        gcc -O2 -shared -o sqlite-lua.dll lua.c \
           -I/mingw64/include \
           -I/mingw64/include/lua5.3 \
           $LUA_LIB \
@@ -66,8 +66,8 @@ jobs:
         LUA_LIB=$(find /usr/lib -name "liblua5.3.a" | head -n 1)
         echo "Found Static Lua Lib: $LUA_LIB"
         
-        # 2. 修正主程式檔名為 sqlite_lua.c 進行編譯
-        gcc -O2 -shared -fPIC -o sqlite-lua.so sqlite_lua.c \
+        # 2. 將輸入檔案修正為 lua.c，並輸出為 sqlite-lua.so
+        gcc -O2 -shared -fPIC -o sqlite-lua.so lua.c \
           -I/usr/include/lua5.3 \
           -Wl,-Bsymbolic \
           $LUA_LIB
