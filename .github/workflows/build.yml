@@ -1,34 +1,74 @@
-name: Build SQLite Lua Extension
+name: Build Static SQLite Lua Extension
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
+  # === Windows 靜態編譯 (獨立 DLL，不依賴外部 lua5x.dll) ===
+  build-windows-static:
+    runs-on: windows-latest
     steps:
-    - name: Check out repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          make
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-sqlite3
+          mingw-w64-x86_64-lua
+
+    - name: Build Static DLL
+      shell: msys2 {0}
+      run: |
+        # 尋找 MSYS2 環境中的 liblua.a 靜態庫路徑
+        LUA_STATIC_LIB=$(find /mingw64/lib -name "liblua.a" | head -n 1)
+        echo "Found Lua static lib at: $LUA_STATIC_LIB"
+        
+        # 強制覆蓋 Makefile 的連結行為，直接將 liblua.a 鎖進 DLL，並加上 GCC 靜態參數
+        make LIBS="$LUA_STATIC_LIB -static-libgcc" LDFLAGS="-shared -static-libgcc"
+
+    - name: Verify and Upload Windows DLL
+      uses: actions/upload-artifact@v4
+      with:
+        name: sqlite-lua-extension-windows-static
+        path: |
+          *.dll
+          README.md
+
+  # === Linux 靜態編譯 (獨立 SO，不依賴外部 liblua.so) ===
+  build-linux-static:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libsqlite3-dev lua5.4 liblua5.4-dev
+        sudo apt-get install -y build-essential libsqlite3-dev liblua5.3-dev
 
-    - name: Build extension
+    - name: Build Static SO
       run: |
-        make
+        # 尋找 Linux 系統中的 liblua5.3.a 靜態庫路徑
+        LUA_STATIC_LIB=$(find /usr/lib -name "liblua5.3.a" | head -n 1)
+        echo "Found Lua static lib at: $LUA_STATIC_LIB"
+        
+        # 使用靜態庫編譯，並確保加上 -fPIC
+        make CFLAGS="-O2 -fPIC" LIBS="$LUA_STATIC_LIB"
 
-    - name: Upload artifact
+    - name: Verify and Upload Linux SO
       uses: actions/upload-artifact@v4
       with:
-        name: sqlite-lua-extension
+        name: sqlite-lua-extension-linux-static
         path: |
           *.so
-          *.dll
-          *.dylib
+          README.md
