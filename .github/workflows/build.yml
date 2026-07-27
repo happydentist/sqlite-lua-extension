@@ -23,20 +23,30 @@ jobs:
         install: >-
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-sqlite3
-          mingw-w64-x86_64-lua
+
+    - name: Download and Build Standard Lua 5.3.6
+      shell: msys2 {0}
+      run: |
+        # 1. 下載標準官方 Lua 5.3.6，確保避開 MSYS2 參數不符的 Lua 5.4
+        wget http://lua.org
+        tar zxf lua-5.3.6.tar.gz
+        cd lua-5.3.6/src
+        
+        # 2. 手動用 gcc 編譯出 Windows 需要的核心目標檔
+        gcc -O2 -c *.c -DLUA_COMPAT_5_2
+        rm -f lua.o luac.o
+        ar rcu liblua.a *.o
+        ranlib liblua.a
+        cd ../..
 
     - name: Build Static DLL
       shell: msys2 {0}
       run: |
-        # 1. 抓取系統內建的 liblua.a 靜態庫路徑
-        LUA_LIB=$(find /mingw64/lib -name "liblua.a" | head -n 1)
-        echo "Found Static Lua Lib: $LUA_LIB"
-        
-        # 2. 將輸入檔案修正為 lua.c，並輸出為 sqlite-lua.dll
+        # 連結我們剛剛親自編譯出來的標準 liblua.a 靜態庫
         gcc -O2 -shared -o sqlite-lua.dll lua.c \
+          -Ilua-5.3.6/src \
           -I/mingw64/include \
-          -I/mingw64/include/lua5.3 \
-          $LUA_LIB \
+          lua-5.3.6/src/liblua.a \
           -static-libgcc \
           -Wl,--export-all-symbols
 
@@ -55,22 +65,31 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install System SQLite
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libsqlite3-dev liblua5.3-dev
+        sudo apt-get install -y build-essential libsqlite3-dev
+
+    - name: Download and Build Lua 5.3.6 with fPIC
+      run: |
+        # 1. 下載標準官方 Lua 5.3.6
+        wget http://lua.org
+        tar zxf lua-5.3.6.tar.gz
+        cd lua-5.3.6/src
+        
+        # 2. 強制加上 -fPIC 參數編譯所有 Lua 核心檔案，徹底解決 Linux 連結錯誤
+        gcc -O2 -fPIC -c *.c -DLUA_COMPAT_5_2
+        rm -f lua.o luac.o
+        ar rcu liblua.a *.o
+        ranlib liblua.a
+        cd ../..
 
     - name: Build Static SO
       run: |
-        # 1. 抓取 Ubuntu 系統下的 liblua5.3.a 靜態庫位置
-        LUA_LIB=$(find /usr/lib -name "liblua5.3.a" | head -n 1)
-        echo "Found Static Lua Lib: $LUA_LIB"
-        
-        # 2. 將輸入檔案修正為 lua.c，並輸出為 sqlite-lua.so
+        # 連結帶有 -fPIC 的自建 liblua.a 靜態庫
         gcc -O2 -shared -fPIC -o sqlite-lua.so lua.c \
-          -I/usr/include/lua5.3 \
-          -Wl,-Bsymbolic \
-          $LUA_LIB
+          -Ilua-5.3.6/src \
+          lua-5.3.6/src/liblua.a
 
     - name: Upload Linux SO
       uses: actions/upload-artifact@v4
