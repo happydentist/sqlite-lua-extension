@@ -1,4 +1,4 @@
-name: Build Static SQLite Lua Extension
+name: Fixed Static SQLite Lua Extension
 
 on:
   push:
@@ -23,21 +23,26 @@ jobs:
         install: >-
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-sqlite3
-          mingw-w64-x86_64-lua
 
-    - name: Build Static DLL
+    - name: Download and Build Static Lua (Windows)
       shell: msys2 {0}
       run: |
-        # 1. 找出 liblua.a 靜態庫的精確路徑
-        LUA_STATIC_LIB=$(find /mingw64/lib -name "liblua.a" | head -n 1)
-        echo "Using Lua static lib: $LUA_STATIC_LIB"
-        
-        # 2. 跳過 Makefile，直接用 gcc 編譯延伸模組
-        # -static-libgcc: 讓 DLL 不依賴 MinGW 系統庫
-        # -Wl,--export-all-symbols: 確保 SQLite 能順利尋找到導出函數
+        # 下載官方 Lua 5.3.6 原始碼以利安全編譯出帶有特殊參數的靜態庫
+        curl -R -O http://lua.org
+        tar zxf lua-5.3.6.tar.gz
+        cd lua-5.3.6
+        # 編譯出包含靜態資訊的目標檔
+        make generic CC=gcc
+        cd ..
+
+    - name: Build Extension DLL
+      shell: msys2 {0}
+      run: |
+        # 結合剛剛編譯出來的靜態庫檔案進行封裝
         gcc -O2 -shared -o sqlite-lua.dll sqlite-lua.c \
+          -Ilua-5.3.6/src \
           -I/mingw64/include \
-          $LUA_STATIC_LIB \
+          lua-5.3.6/src/liblua.a \
           -static-libgcc \
           -Wl,--export-all-symbols
 
@@ -56,22 +61,26 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install System SQLite
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libsqlite3-dev liblua5.3-dev
+        sudo apt-get install -y build-essential libsqlite3-dev
 
-    - name: Build Static SO
+    - name: Download and Build Static Lua with fPIC (Linux)
       run: |
-        # 1. 找出 Linux 環境下的 liblua5.3.a 靜態庫
-        LUA_STATIC_LIB=$(find /usr/lib -name "liblua5.3.a" | head -n 1)
-        echo "Using Lua static lib: $LUA_STATIC_LIB"
-        
-        # 2. 跳過 Makefile，直接用 gcc 編譯成 .so
-        # -fPIC: 生成位置無關代碼（動態庫必備）
+        # 下載官方 Lua 原始碼並強制加上 -fPIC 參數編譯，否則 Linux 核心會拒絕打包
+        curl -R -O http://lua.org
+        tar zxf lua-5.3.6.tar.gz
+        cd lua-5.3.6
+        make linux MYCFLAGS="-fPIC"
+        cd ..
+
+    - name: Build Extension SO
+      run: |
+        # 直接連結產出的 liblua.a 靜態庫
         gcc -O2 -shared -fPIC -o sqlite-lua.so sqlite-lua.c \
-          -I/usr/include/lua5.3 \
-          $LUA_STATIC_LIB
+          -Ilua-5.3.6/src \
+          lua-5.3.6/src/liblua.a
 
     - name: Upload Linux SO
       uses: actions/upload-artifact@v4
