@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # === Windows 靜態編譯 (獨立 DLL，不依賴外部 lua5x.dll) ===
+  # === Windows 靜態編譯 ===
   build-windows-static:
     runs-on: windows-latest
     steps:
@@ -21,7 +21,6 @@ jobs:
         msystem: MINGW64
         update: true
         install: >-
-          make
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-sqlite3
           mingw-w64-x86_64-lua
@@ -29,14 +28,20 @@ jobs:
     - name: Build Static DLL
       shell: msys2 {0}
       run: |
-        # 尋找 MSYS2 環境中的 liblua.a 靜態庫路徑
+        # 1. 找出 liblua.a 靜態庫的精確路徑
         LUA_STATIC_LIB=$(find /mingw64/lib -name "liblua.a" | head -n 1)
-        echo "Found Lua static lib at: $LUA_STATIC_LIB"
+        echo "Using Lua static lib: $LUA_STATIC_LIB"
         
-        # 強制覆蓋 Makefile 的連結行為，直接將 liblua.a 鎖進 DLL，並加上 GCC 靜態參數
-        make LIBS="$LUA_STATIC_LIB -static-libgcc" LDFLAGS="-shared -static-libgcc"
+        # 2. 跳過 Makefile，直接用 gcc 編譯延伸模組
+        # -static-libgcc: 讓 DLL 不依賴 MinGW 系統庫
+        # -Wl,--export-all-symbols: 確保 SQLite 能順利尋找到導出函數
+        gcc -O2 -shared -o sqlite-lua.dll sqlite-lua.c \
+          -I/mingw64/include \
+          $LUA_STATIC_LIB \
+          -static-libgcc \
+          -Wl,--export-all-symbols
 
-    - name: Verify and Upload Windows DLL
+    - name: Upload Windows DLL
       uses: actions/upload-artifact@v4
       with:
         name: sqlite-lua-extension-windows-static
@@ -44,7 +49,7 @@ jobs:
           *.dll
           README.md
 
-  # === Linux 靜態編譯 (獨立 SO，不依賴外部 liblua.so) ===
+  # === Linux 靜態編譯 ===
   build-linux-static:
     runs-on: ubuntu-latest
     steps:
@@ -58,14 +63,17 @@ jobs:
 
     - name: Build Static SO
       run: |
-        # 尋找 Linux 系統中的 liblua5.3.a 靜態庫路徑
+        # 1. 找出 Linux 環境下的 liblua5.3.a 靜態庫
         LUA_STATIC_LIB=$(find /usr/lib -name "liblua5.3.a" | head -n 1)
-        echo "Found Lua static lib at: $LUA_STATIC_LIB"
+        echo "Using Lua static lib: $LUA_STATIC_LIB"
         
-        # 使用靜態庫編譯，並確保加上 -fPIC
-        make CFLAGS="-O2 -fPIC" LIBS="$LUA_STATIC_LIB"
+        # 2. 跳過 Makefile，直接用 gcc 編譯成 .so
+        # -fPIC: 生成位置無關代碼（動態庫必備）
+        gcc -O2 -shared -fPIC -o sqlite-lua.so sqlite-lua.c \
+          -I/usr/include/lua5.3 \
+          $LUA_STATIC_LIB
 
-    - name: Verify and Upload Linux SO
+    - name: Upload Linux SO
       uses: actions/upload-artifact@v4
       with:
         name: sqlite-lua-extension-linux-static
