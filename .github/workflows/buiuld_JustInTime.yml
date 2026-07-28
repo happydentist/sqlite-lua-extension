@@ -1,0 +1,114 @@
+name: ⚡ Build Static - LuaJIT High Performance (hoelzro)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # === Windows LuaJIT 靜態編譯 (獨立 DLL) ===
+  build-windows-luajit:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Checkout LuaJIT Source
+      uses: actions/checkout@v4
+      with:
+        repository: LuaJIT/LuaJIT
+        ref: v2.1
+        path: luajit-src
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          make
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-sqlite3
+
+    # 關鍵必勝步驟：針對根目錄的 lua.c 注入 LuaJIT 缺少的 5.2/5.3 巨集函數對應 (Polyfill)
+    - name: Inject Compatibility Polyfill (Windows)
+      shell: msys2 {0}
+      run: |
+        sed -i '1s/^/#define LUA_OPEQ 0\n#define lua_compare(L,i1,i2,op) (op == LUA_OPEQ ? lua_equal(L,i1,i2) : 0)\n/' lua.c
+        head -n 5 lua.c
+
+    - name: Build LuaJIT Static Lib (Windows)
+      shell: msys2 {0}
+      run: |
+        cd luajit-src
+        make BUILDMODE=static
+        cd ..
+
+    - name: Build Static DLL with LuaJIT
+      shell: msys2 {0}
+      run: |
+        LUAJIT_LIB=$(find luajit-src/src -name "libluajit.a" | head -n 1)
+        echo "Found LuaJIT static lib: $LUAJIT_LIB"
+        
+        # 輸入直接對齊根目錄的 lua.c
+        gcc -O2 -shared -o sqlite-lua-luajit.dll lua.c \
+          -Iluajit-src/src \
+          -I/mingw64/include \
+          $LUAJIT_LIB \
+          -static-libgcc \
+          -Wl,--export-all-symbols
+
+    - name: Upload Windows DLL
+      uses: actions/upload-artifact@v4
+      with:
+        name: sqlite-lua-luajit-windows
+        path: |
+          *.dll
+          README.md
+
+  # === Linux LuaJIT 靜態編譯 (獨立 SO) ===
+  build-linux-luajit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Checkout LuaJIT Source
+      uses: actions/checkout@v4
+      with:
+        repository: LuaJIT/LuaJIT
+        ref: v2.1
+        path: luajit-src
+
+    - name: Install System SQLite
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libsqlite3-dev
+
+    # 關鍵必勝步驟：針對根目錄的 lua.c 注入 LuaJIT 缺少的 5.2/5.3 巨集函數對應 (Polyfill)
+    - name: Inject Compatibility Polyfill (Linux)
+      run: |
+        sed -i '1s/^/#define LUA_OPEQ 0\n#define lua_compare(L,i1,i2,op) (op == LUA_OPEQ ? lua_equal(L,i1,i2) : 0)\n/' lua.c
+        head -n 5 lua.c
+
+    - name: Build LuaJIT Static Lib with fPIC (Linux)
+      run: |
+        cd luajit-src
+        make BUILDMODE=static CFLAGS="-O2 -fPIC"
+        cd ..
+
+    - name: Build Static SO with LuaJIT
+      run: |
+        LUAJIT_LIB=$(find luajit-src/src -name "libluajit.a" | head -n 1)
+        echo "Found LuaJIT static lib: $LUAJIT_LIB"
+        
+        # 輸入直接對齊根目錄的 lua.c
+        gcc -O2 -shared -fPIC -o sqlite-lua-luajit.so lua.c \
+          -Iluajit-src/src \
+          $LUAJIT_LIB
+
+    - name: Upload Linux SO
+      uses: actions/upload-artifact@v4
+      with:
+        name: sqlite-lua-luajit-linux
+        path: |
+          *.so
+          README.md
