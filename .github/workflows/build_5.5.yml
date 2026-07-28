@@ -28,7 +28,14 @@ jobs:
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-sqlite3
 
-    # 關鍵修正：手動精確列出官方 31 個基礎核心檔案，主動跳過並封印 onelua.c
+    # 關鍵修正：在根目錄的 lua.c 頂端注入 3 參數轉譯巨集補丁，徹底解決 5.5 核心衝突
+    - name: Inject Lua 5.5 Parameter Polyfill (Windows)
+      shell: msys2 {0}
+      run: |
+        sed -i '1s/^/#define lua_newstate(f,ud) lua_newstate(f,ud,0)\n/' lua.c
+        head -n 5 lua.c
+
+    # 手動精確列出官方 31 個基礎核心檔案，主動跳過並封印 onelua.c
     - name: Build New Lua Static Lib (Windows)
       shell: msys2 {0}
       run: |
@@ -41,7 +48,6 @@ jobs:
     - name: Build Static DLL with Latest Lua
       shell: msys2 {0}
       run: |
-        # 精確指定為根目錄下的 lua.c
         gcc -O2 -shared -o sqlite-lua-latest.dll lua.c \
           -Ilua-src \
           -I/mingw64/include \
@@ -77,7 +83,13 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential libsqlite3-dev
 
-    # 關鍵修正：Linux 端同樣精確指定核心檔案，強制帶上 -fPIC 參數
+    # 關鍵修正：在根目錄的 lua.c 頂端注入 3 參數轉譯巨集補丁，徹底解決 5.5 核心衝突
+    - name: Inject Lua 5.5 Parameter Polyfill (Linux)
+      run: |
+        sed -i '1s/^/#define lua_newstate(f,ud) lua_newstate(f,ud,0)\n/' lua.c
+        head -n 5 lua.c
+
+    # Linux 端同樣精確指定核心檔案，強制帶上 -fPIC 參數
     - name: Build New Lua Static Lib with fPIC (Linux)
       run: |
         cd lua-src
@@ -88,7 +100,6 @@ jobs:
 
     - name: Build Static SO with Latest Lua
       run: |
-        # 精確指定為根目錄下的 lua.c
         gcc -O2 -shared -fPIC -o sqlite-lua-latest.so lua.c \
           -Ilua-src \
           lua-src/liblua.a
